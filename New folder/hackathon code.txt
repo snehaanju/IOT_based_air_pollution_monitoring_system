@@ -1,0 +1,185 @@
+#include <dht.h>
+#include <LiquidCrystal.h>
+int RS = 12, E = 11, D4 = 5, D5 = 4, D6 = 3, D7 = 2;
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+dht DHT;
+
+#define DHT11_PIN 7
+
+void setup(){
+  lcd.begin(16, 2);
+  Serial.begin(9600);
+}
+
+void loop()
+{
+  int chk = DHT.read11(DHT11_PIN);
+  lcd.setCursor(0,0); 
+  lcd.print("Temp: ");
+  lcd.print(DHT.temperature);
+  lcd.print((char)223);
+  lcd.print("C");
+  lcd.setCursor(0,1);
+  lcd.print("Humidity: ");
+  lcd.print(DHT.humidity);
+  lcd.print("%");
+  delay(1000);
+}
+
+
+#include <ESP8266WiFi.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+ #include <Adafruit_BME280.h>
+#include "MQ135.h"
+#include <Arduino.h>
+#define LENG 31  
+
+#define D1 5
+#define D2 4
+#define D4 2
+#define D3 0
+
+// assign the SPI bus to pins
+#define BME_SCK D1
+#define BME_MISO D4
+#define BME_MOSI D2
+#define BME_CS D3
+
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+Adafruit_BME280 bme(BME_CS, BME_MOSI, BME_MISO, BME_SCK);
+unsigned long delayTime;
+
+unsigned char buf[LENG];
+float h, t, p, pin, dp;
+char temperatureFString[6];
+char dpString[6];
+char humidityString[6];
+char pressureString[7];
+char pressureInchString[6];
+
+
+ String apiKey = "M5ZQ2YT298UPI1C2";
+ const char* ssid = "realme 7";
+ const char* password = "edef5f382b";
+
+const char* server = "api.thingspeak.com";
+WiFiClient client;
+
+
+
+
+void setup()
+{
+  Serial.begin(115200);   
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);  
+  WiFi.begin(ssid, password);
+   while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+  // Printing the ESP IP address
+  Serial.println(WiFi.localIP());    
+  
+
+  if (!bme.begin()) 
+  {
+    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    return;
+}
+}
+
+void loop()
+{
+  
+
+      MQ135 gasSensor = MQ135(A0);
+      float air_quality = gasSensor.getPPM();
+      Serial.print("Air Quality: ");  
+      Serial.print(air_quality);
+      Serial.println("  PPM");   
+      Serial.println();
+
+      h = bme.readHumidity();
+      t = bme.readTemperature();
+      t = t*1.8+32.0;
+      dp = t-0.36*(100.0-h);
+    
+      p = bme.readPressure()/100.0F;
+      pin = 0.02953*p;
+      dtostrf(t, 5, 1, temperatureFString);
+      dtostrf(h, 5, 1, humidityString);
+      dtostrf(p, 6, 1, pressureString);
+      dtostrf(pin, 5, 2, pressureInchString);
+      dtostrf(dp, 5, 1, dpString);
+
+      Serial.print("Temperature = ");
+      Serial.println(temperatureFString);
+      Serial.print("Humidity = ");
+      Serial.println(humidityString);
+      Serial.print("Pressure = ");
+      Serial.println(pressureString);
+      Serial.print("Pressure Inch = ");
+      Serial.println(pressureInchString);
+      Serial.print("Dew Point = ");
+      Serial.println(dpString);
+ 
+      Serial.println("...............................................");
+
+      if (client.connect(server,80))  // "184.106.153.149" or api.thingspeak.com
+    {
+        String postStr = apiKey;
+       
+        postStr +="&field1=";
+        postStr += String(air_quality);
+        postStr +="&field2=";
+        postStr += String(pressureString);
+        postStr +="&field3=";
+        postStr += String(humidityString);
+        postStr +="&field4=";
+        postStr += String(pressureInchString);
+        postStr +="&field5=";
+        postStr += String(temperatureFString);
+        postStr += "\r\n\r\n";
+        
+        client.print("POST /update HTTP/1.1\n");
+        client.print("Host: api.thingspeak.com\n");
+        client.print("Connection: close\n");
+        client.print("X-THINGSPEAKAPIKEY: "+apiKey+"\n");
+        client.print("Content-Type: application/x-www-form-urlencoded\n");
+        client.print("Content-Length: ");
+        client.print(postStr.length());
+        client.print("\n\n");
+        client.print(postStr); 
+    }   
+    client.stop();  
+    
+ 
+    }
+
+  
+char checkValue(unsigned char *thebuf, char leng)
+{  
+  char receiveflag=0;
+  int receiveSum=0;
+
+  for(int i=0; i<(leng-2); i++){
+  receiveSum=receiveSum+thebuf[i];
+  }
+  receiveSum=receiveSum + 0x42;
+ 
+  if(receiveSum == ((thebuf[leng-2]<<8)+thebuf[leng-1]))  //check the serial data 
+  {
+    receiveSum = 0;
+    receiveflag = 1;
+  }
+  return receiveflag;
+}
